@@ -24,7 +24,7 @@ jobs:
           distribution: 'temurin'    # <- додано тут
 
       - name: SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@v1.1.0
+        uses: sonarsource/sonarqube-scan-action@v1.4
         with:
           projectBaseDir: .
         env:
