@@ -24,12 +24,12 @@ jobs:
           distribution: 'temurin'    # <- додано тут
 
       - name: SonarQube Scan
-        uses: sonarsource/sonarqube-scan-action@v1.4
+        uses: sonarsource/sonarqube-scan-action@v1.1.0
         with:
           projectBaseDir: .
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          SONAR_HOST_URL: https://sonarcloud.io
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
 
       - name: Check Quality Gate
         uses: sonarsource/sonarqube-quality-gate-action@v1.1.0
