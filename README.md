@@ -64,7 +64,7 @@ library_service/
 ├── tests/
 │ └── test_library.py # Модульні тести (pytest)
 ├── main.py # Точка входу
-└── requirements.txt # Залежності
+
 ``` </code></pre>
 ## ⚙️ Вимоги
 
