@@ -11,7 +11,7 @@ on:
 jobs:
   sonar:
     name: SonarQube Scan and Quality Gate
-    runs-on: ubuntu-latest  # Use GitHub-hosted for Linux runner
+    runs-on: self-hosted   # <-- змінено на self-hosted
 
     steps:
       - name: Checkout code
