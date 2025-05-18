@@ -25,18 +25,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Wait for SonarQube server to be ready
+      - name: Wait for SonarQube to be ready
         run: |
-          echo "Waiting for SonarQube to be up on localhost:9000 ..."
           for i in {1..30}; do
-            if curl -s http://localhost:9000 > /dev/null; then
+            status_code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:9000)
+            if [ "$status_code" -eq 200 ]; then
               echo "SonarQube is up!"
-              break
+              exit 0
             else
-              echo "SonarQube not ready yet, retrying in 5 seconds..."
+              echo "Waiting for SonarQube to start... (HTTP status: $status_code)"
               sleep 5
             fi
           done
+          echo "SonarQube did not start in time!"
+          exit 1
+
+      
 
       - name: Set up JDK 11
         uses: actions/setup-java@v3
