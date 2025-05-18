@@ -9,6 +9,16 @@ on:
 jobs:
   sonar-analysis:
     runs-on: ubuntu-latest
+
+    # Запускаємо SonarQube як сервіс, щоб був доступний на localhost:9000
+    services:
+      sonarqube:
+        image: sonarqube:community
+        ports:
+          - 9000:9000
+        options: >-
+          --env SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+
     env:
       SONAR_HOST_URL: http://localhost:9000
       SONAR_PROJECT_KEY: library_service_key
@@ -18,49 +28,41 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Start SonarQube container
-        run: |
-          docker run -d \
-            --name sonarqube \
-            -p 9000:9000 \
-            -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
-            sonarqube:community
-
-      - name: Wait for SonarQube to be ready
-        run: |
-          echo "Waiting for SonarQube..."
-          for i in {1..30}; do
-            if curl -s http://localhost:9000/api/system/status | grep -q 'UP'; then
-              echo "SonarQube is ready!"
-              break
-            fi
-            sleep 5
-          done
-
       - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk jq unzip wget
+        run: sudo apt-get update && sudo apt-get install -y openjdk-17-jdk jq unzip wget
 
       - name: Cache sonar-scanner
         uses: actions/cache@v3
         with:
-          path: ~/.sonar
-          key: ${{ runner.os }}-sonar
+          path: /opt/sonar-scanner
+          key: ${{ runner.os }}-sonar-scanner
 
-      - name: Install sonar-scanner
+      - name: Install sonar-scanner if needed
+        if: steps.cache-sonar-scanner.outputs.cache-hit != 'true'
         run: |
           wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
           unzip sonar-scanner-cli-5.0.1.3006-linux.zip
           sudo mv sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
-          echo "/opt/sonar-scanner/bin" >> $GITHUB_PATH
+
+      - name: Add sonar-scanner to PATH
+        run: echo "/opt/sonar-scanner/bin" >> $GITHUB_PATH
+
+      - name: Wait for SonarQube to be ready
+        run: |
+          timeout=150
+          until curl -s $SONAR_HOST_URL/api/system/status | grep -q UP; do
+            sleep 5
+            timeout=$((timeout - 5))
+            if [ $timeout -le 0 ]; then
+              echo "SonarQube did not start in time"
+              exit 1
+            fi
+          done
+          echo "SonarQube is ready!"
 
       - name: Run SonarScanner
         run: |
-          sonar-scanner \
+          sonar-scanner -X \
             -Dsonar.projectKey=$SONAR_PROJECT_KEY \
             -Dsonar.sources=. \
             -Dsonar.host.url=$SONAR_HOST_URL \
