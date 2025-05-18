@@ -1,6 +1,15 @@
+name: SonarQube Analysis
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
 jobs:
   sonarqube-analysis:
     runs-on: ubuntu-latest
+
     services:
       sonarqube:
         image: sonarqube:lts
@@ -25,12 +34,15 @@ jobs:
 
       - name: Run SonarQube Scanner inside Docker
         run: |
+          docker network create sonar-network || true
+          docker network connect sonar-network ${{ github.service_container_id }} || true
           docker run --rm \
+            --network sonar-network \
             -v "${{ github.workspace }}:/usr/src" \
             sonarsource/sonar-scanner-cli \
             -Dsonar.projectKey=library_service_key \
             -Dsonar.sources=. \
-            -Dsonar.host.url=http://host.docker.internal:9000 \
+            -Dsonar.host.url=http://sonarqube:9000 \
             -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
       - name: Wait a bit for analysis to be processed
