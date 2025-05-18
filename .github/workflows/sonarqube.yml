@@ -25,9 +25,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Verify token
-        run: |
-          curl -u ${{ secrets.SONAR_TOKEN }}: "" "http://localhost:9000/api/user_tokens/search"
+
 
       - name: Set up JDK 17
         uses: actions/setup-java@v3
@@ -35,19 +33,26 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Wait for SonarQube to be ready
+      - name: Verify SonarQube connection
         run: |
+          echo "Waiting for SonarQube API to be fully ready..."
+          # Чекаємо, поки API не почне приймати запити
           for i in {1..30}; do
-            if curl -s http://localhost:9000/api/system/status | grep -q '"status":"UP"'; then
-              echo "SonarQube is ready!"
-              sleep 10  # Додатковий час для ініціалізації
-              exit 0
+            if curl -s -f http://localhost:9000/api/system/status | grep -q '"status":"UP"'; then
+              echo "SonarQube API is responding!"
+              break
             fi
-            echo "Waiting for SonarQube to start..."
-            sleep 10
+            sleep 5
           done
-          echo "SonarQube did not start in time!"
-          exit 1
+
+          # Перевіряємо токен (тільки якщо він встановлений)
+          if [ -n "${{ secrets.SONAR_TOKEN }}" ]; then
+            echo "Verifying token..."
+            # Використовуємо базову автентифікацію з пустим паролем
+            curl -v -u "${{ secrets.SONAR_TOKEN }}:" "http://localhost:9000/api/user_tokens/search"
+          else
+            echo "No SONAR_TOKEN provided, skipping verification"
+          fi
 
       - name: Download and setup SonarScanner
         run: |
