@@ -14,26 +14,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Setup Docker
+      - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v2
 
       - name: Run SonarQube Scanner inside Docker
         run: |
           docker run --rm \
             -v "${{ github.workspace }}:/usr/src" \
+            -w /usr/src \
             sonarsource/sonar-scanner-cli \
             -Dsonar.projectKey=library_service_key \
             -Dsonar.sources=. \
-            -Dsonar.host.url=http://host.docker.internal:9000 \
+            -Dsonar.host.url=http://localhost:9000 \
             -Dsonar.login=${{ secrets.SONAR_TOKEN }}
 
-      - name: Wait a bit for analysis to be processed
-        run: sleep 10
+      - name: Wait for SonarQube to process analysis
+        run: sleep 15
 
       - name: Get Quality Gate Status
         run: |
-          curl -s -u ${{ secrets.SONAR_TOKEN }}: \
-            "http://host.docker.internal:9000/api/qualitygates/project_status?projectKey=library_service_key" \
+          curl -s -u "${{ secrets.SONAR_TOKEN }}:" \
+            "http://localhost:9000/api/qualitygates/project_status?projectKey=library_service_key" \
             > result.json
 
           cat result.json
