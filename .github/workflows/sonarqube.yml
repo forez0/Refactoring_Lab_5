@@ -9,82 +9,82 @@ on:
 jobs:
   sonar-analysis:
     runs-on: ubuntu-latest
-
-    services:
-      sonarqube:
-        image: sonarqube:community
-        ports:
-          - 9000:9000
-        env:
-          SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
-          SONAR_FORCE_AUTHENTICATION: "true"
-        volumes:
-          - sonarqube_data:/opt/sonarqube/data
-          - sonarqube_extensions:/opt/sonarqube/extensions
+    env:
+      SONAR_HOST_URL: http://localhost:9000
+      SONAR_PROJECT_KEY: library_service_key
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Setup Java
-        uses: actions/setup-java@v3
-        with:
-          java-version: '17'
-          distribution: 'temurin'
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
 
-      - name: Install sonar-scanner
-        run: |
-          sudo apt-get install -y wget unzip
-          wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
-          unzip sonar-scanner-cli-5.0.1.3006-linux.zip
-          sudo mv sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
-          echo "/opt/sonar-scanner/bin" >> $GITHUB_PATH
+    - name: Start SonarQube container
+      run: |
+        docker run -d \
+          --name sonarqube \
+          -p 9000:9000 \
+          -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+          sonarqube:community
 
-      - name: Wait for SonarQube to be ready
-        run: |
-          echo "Waiting for SonarQube to start..."
-          for i in {1..30}; do
-            if curl -s -u admin:admin http://localhost:9000/api/system/status | grep -q 'UP'; then
-              echo "SonarQube is ready!"
-              # Додаткове очікування для повної ініціалізації
-              sleep 30
-              break
-            fi
-            sleep 5
-          done
-
-      - name: Generate or use existing token
-        id: sonar-token
-        run: |
-          # Спробуємо використати існуючий токен з секретів
-          if [ -n "${{ secrets.SONAR_TOKEN }}" ]; then
-            echo "Using existing SONAR_TOKEN from secrets"
-            echo "SONAR_TOKEN=${{ secrets.SONAR_TOKEN }}" >> $GITHUB_ENV
-          else
-            # Якщо токена немає - генеруємо новий
-            echo "Generating new admin token"
-            TOKEN=$(curl -u admin:admin -X POST "http://localhost:9000/api/user_tokens/generate" \
-              -d "name=github_actions_token" \
-              -d "login=admin" | jq -r '.token')
-            echo "Generated token: $TOKEN"
-            echo "SONAR_TOKEN=$TOKEN" >> $GITHUB_ENV
+    - name: Wait for SonarQube to be ready
+      run: |
+        echo "Waiting for SonarQube..."
+        for i in {1..30}; do
+          if curl -s http://localhost:9000/api/system/status | grep -q 'UP'; then
+            echo "SonarQube is ready!"
+            break
           fi
+          sleep 5
+        done
 
-      - name: Verify token
-        run: |
-          echo "Verifying token..."
-          curl -s -u ${{ env.SONAR_TOKEN }}: "" "http://localhost:9000/api/user_tokens/search"
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openjdk-17-jdk jq
 
-      - name: Run SonarScanner Analysis
-        run: |
-          sonar-scanner \
-            -Dsonar.projectKey=library_service_key \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=http://localhost:9000 \
-            -Dsonar.login=${{ env.SONAR_TOKEN }} \
-            -X
+    - name: Cache sonar-scanner
+      uses: actions/cache@v3
+      with:
+        path: ~/.sonar
+        key: ${{ runner.os }}-sonar
 
-      - name: Check analysis results
-        run: |
-          sleep 30
-          curl -u ${{ env.SONAR_TOKEN }}: "" "http://localhost:9000/api/qualitygates/project_status?projectKey=library_service_key"
+    - name: Install sonar-scanner
+      run: |
+        wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+        unzip sonar-scanner-cli-5.0.1.3006-linux.zip
+        sudo mv sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
+        echo "/opt/sonar-scanner/bin" >> $GITHUB_PATH
+
+    - name: Run SonarScanner
+      run: |
+        sonar-scanner \
+          -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+          -Dsonar.sources=. \
+          -Dsonar.host.url=$SONAR_HOST_URL \
+          -Dsonar.login=$SONAR_TOKEN
+
+    - name: Fetch coverage via API
+      run: |
+        sleep 10  # ensure analysis is processed
+        curl -s "$SONAR_HOST_URL/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=coverage" \
+          | jq -r '.component.measures[0].value' > coverage.txt
+
+    - name: Read and export coverage
+      id: coverage
+      run: |
+        COVERAGE=$(cat coverage.txt)
+        echo "code_coverage=$COVERAGE" >> $GITHUB_ENV
+        echo "Coverage is $COVERAGE%"
+
+    - name: Conditional pass/fail by coverage
+      if: ${{ env.code_coverage >= 30 }}
+      run: echo "✅ Coverage OK"
+
+    - name: Fail if coverage too low
+      if: ${{ env.code_coverage < 30 }}
+      run: |
+        echo "❌ Coverage too low: ${{ env.code_coverage }}%"
+        exit 1
