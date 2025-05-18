@@ -18,7 +18,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Docker
+    - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
     - name: Start SonarQube container
@@ -43,7 +43,7 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y openjdk-17-jdk jq
+        sudo apt-get install -y openjdk-17-jdk jq unzip wget
 
     - name: Cache sonar-scanner
       uses: actions/cache@v3
@@ -76,15 +76,15 @@ jobs:
       id: coverage
       run: |
         COVERAGE=$(cat coverage.txt)
-        echo "code_coverage=$COVERAGE" >> $GITHUB_ENV
+        echo "CODE_COVERAGE=$COVERAGE" >> $GITHUB_ENV
         echo "Coverage is $COVERAGE%"
 
     - name: Conditional pass/fail by coverage
-      if: ${{ env.code_coverage >= 30 }}
+      if: ${{ env.CODE_COVERAGE != '' && env.CODE_COVERAGE >= 30 }}
       run: echo "✅ Coverage OK"
 
     - name: Fail if coverage too low
-      if: ${{ env.code_coverage < 30 }}
+      if: ${{ env.CODE_COVERAGE == '' || env.CODE_COVERAGE < 30 }}
       run: |
-        echo "❌ Coverage too low: ${{ env.code_coverage }}%"
+        echo "❌ Coverage too low: ${{ env.CODE_COVERAGE }}%"
         exit 1
