@@ -17,14 +17,10 @@ jobs:
           - 9000:9000
         env:
           SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
-          SONAR_FORCE_AUTHENTICATION: "true"  # Увімкнути автентифікацію
+          SONAR_FORCE_AUTHENTICATION: "false"  # Тимчасово вимикаємо автентифікацію
         volumes:
           - sonarqube_data:/opt/sonarqube/data
           - sonarqube_extensions:/opt/sonarqube/extensions
-
-    env:
-      SONAR_HOST_URL: http://localhost:9000
-      SONAR_PROJECT_KEY: library_service_key
 
     steps:
       - name: Checkout code
@@ -44,45 +40,35 @@ jobs:
           sudo mv sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
           echo "/opt/sonar-scanner/bin" >> $GITHUB_PATH
 
-      - name: Wait for SonarQube
+      - name: Wait for SonarQube to be ready
         run: |
           echo "Waiting for SonarQube to start..."
-          for i in {1..30}; do
+          for i in {1..60}; do
             if curl -s http://localhost:9000/api/system/status | grep -q 'UP'; then
               echo "SonarQube is ready!"
-              # Додаткове очікування для ініціалізації
-              sleep 30
+              # Додаткове очікування для повної ініціалізації
+              sleep 60
               break
             fi
             sleep 5
           done
 
-      - name: Setup Admin Token
+      - name: Verify SonarQube accessibility
         run: |
-          # Зміна пароля admin (якщо перший запуск)
-          curl -u admin:admin -X POST "http://localhost:9000/api/users/change_password" \
-            -d "login=admin" \
-            -d "previousPassword=admin" \
-            -d "newPassword=newAdminPassword123" || echo "Password might already be changed"
-          
-          # Генерація токена
-          TOKEN=$(curl -u admin:newAdminPassword123 -X POST "http://localhost:9000/api/user_tokens/generate" \
-            -d "name=github_action_token" \
-            -d "login=admin" | jq -r '.token')
-          
-          echo "Generated token: $TOKEN"
-          echo "SONAR_TOKEN=$TOKEN" >> $GITHUB_ENV
+          curl -v http://localhost:9000/api/system/status
+          curl -v http://localhost:9000/api/projects/search
 
-      - name: Run Analysis
+      - name: Run SonarScanner Analysis
         run: |
           sonar-scanner \
-            -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+            -Dsonar.projectKey=library_service_key \
             -Dsonar.sources=. \
-            -Dsonar.host.url=$SONAR_HOST_URL \
-            -Dsonar.login=${{ env.SONAR_TOKEN }} \
+            -Dsonar.host.url=http://localhost:9000 \
+            -Dsonar.login=admin \
+            -Dsonar.password=admin \
             -X
 
-      - name: Check results
+      - name: Check analysis results
         run: |
-          sleep 15  # Чекаємо обробки результатів
-          curl -u ${{ env.SONAR_TOKEN }}: "" "$SONAR_HOST_URL/api/qualitygates/project_status?projectKey=$SONAR_PROJECT_KEY"
+          sleep 30
+          curl http://localhost:9000/api/qualitygates/project_status?projectKey=library_service_key
