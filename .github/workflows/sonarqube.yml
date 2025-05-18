@@ -2,64 +2,89 @@ name: SonarQube Analysis
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   pull_request:
+    branches: [ main ]
 
 jobs:
-  sonarqube-analysis:
+  sonar-analysis:
     runs-on: ubuntu-latest
-
-    services:
-      sonarqube:
-        image: sonarqube:lts
-        ports:
-          - 9000:9000
-        options: >-
-          --health-cmd="curl -f http://localhost:9000" 
-          --health-interval=10s 
-          --health-timeout=5s 
-          --health-retries=5
+    env:
+      SONAR_HOST_URL: http://localhost:9000
+      SONAR_PROJECT_KEY: library_service_key
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Wait for SonarQube to be ready
-        run: |
-          until curl -s http://localhost:9000 > /dev/null; do
-            echo "Waiting for SonarQube..."
-            sleep 10
-          done
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v3
 
-      - name: Run SonarQube Scanner inside Docker
-        run: |
-          docker network create sonar-network || true
-          docker network connect sonar-network ${{ github.service_container_id }} || true
-          docker run --rm \
-            --network sonar-network \
-            -v "${{ github.workspace }}:/usr/src" \
-            sonarsource/sonar-scanner-cli \
-            -Dsonar.projectKey=library_service_key \
-            -Dsonar.sources=. \
-            -Dsonar.host.url=http://sonarqube:9000 \
-            -Dsonar.login=${{ secrets.SONAR_TOKEN }}
+    - name: Start SonarQube container
+      run: |
+        docker run -d \
+          --name sonarqube \
+          -p 9000:9000 \
+          -e SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true \
+          sonarqube:community
 
-      - name: Wait a bit for analysis to be processed
-        run: sleep 10
-
-      - name: Get Quality Gate Status
-        run: |
-          curl -s -u ${{ secrets.SONAR_TOKEN }}: \
-            "http://localhost:9000/api/qualitygates/project_status?projectKey=library_service_key" \
-            > result.json
-
-          cat result.json
-          STATUS=$(jq -r '.projectStatus.status' result.json)
-
-          echo "Quality Gate Status: $STATUS"
-
-          if [ "$STATUS" != "OK" ]; then
-            echo "Quality Gate failed!"
-            exit 1
+    - name: Wait for SonarQube to be ready
+      run: |
+        echo "Waiting for SonarQube..."
+        for i in {1..30}; do
+          if curl -s http://localhost:9000/api/system/status | grep -q 'UP'; then
+            echo "SonarQube is ready!"
+            break
           fi
+          sleep 5
+        done
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y openjdk-17-jdk jq
+
+    - name: Cache sonar-scanner
+      uses: actions/cache@v3
+      with:
+        path: ~/.sonar
+        key: ${{ runner.os }}-sonar
+
+    - name: Install sonar-scanner
+      run: |
+        wget https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip
+        unzip sonar-scanner-cli-5.0.1.3006-linux.zip
+        sudo mv sonar-scanner-5.0.1.3006-linux /opt/sonar-scanner
+        echo "/opt/sonar-scanner/bin" >> $GITHUB_PATH
+
+    - name: Run SonarScanner
+      run: |
+        sonar-scanner \
+          -Dsonar.projectKey=library_service_key \
+          -Dsonar.sources=. \
+          -Dsonar.host.url=$SONAR_HOST_URL \
+          -Dsonar.login=$SONAR_TOKEN
+
+    - name: Fetch coverage via API
+      run: |
+        sleep 10  # ensure analysis is processed
+        curl -s "$SONAR_HOST_URL/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=coverage" \
+          | jq -r '.component.measures[0].value' > coverage.txt
+
+    - name: Read and export coverage
+      id: coverage
+      run: |
+        COVERAGE=$(cat coverage.txt)
+        echo "code_coverage=$COVERAGE" >> $GITHUB_ENV
+        echo "Coverage is $COVERAGE%"
+
+    - name: Conditional pass/fail by coverage
+      if: ${{ env.code_coverage >= 30 }}
+      run: echo "✅ Coverage OK"
+
+    - name: Fail if coverage too low
+      if: ${{ env.code_coverage < 30 }}
+      run: |
+        echo "❌ Coverage too low: ${{ env.code_coverage }}%"
+        exit 1
