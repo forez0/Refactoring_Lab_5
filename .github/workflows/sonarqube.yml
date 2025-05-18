@@ -61,7 +61,7 @@ jobs:
     - name: Run SonarScanner
       run: |
         sonar-scanner \
-          -Dsonar.projectKey=$SONAR_PROJECT_KEY \
+          -Dsonar.projectKey=library_service_key \
           -Dsonar.sources=. \
           -Dsonar.host.url=$SONAR_HOST_URL \
           -Dsonar.login=$SONAR_TOKEN
@@ -75,7 +75,7 @@ jobs:
     - name: Read and export coverage
       id: coverage
       run: |
-        COVERAGE=$(cat coverage.txt)
+        COVERAGE=$(cat coverage.xml)
         echo "CODE_COVERAGE=$COVERAGE" >> $GITHUB_ENV
         echo "Coverage is $COVERAGE%"
 
