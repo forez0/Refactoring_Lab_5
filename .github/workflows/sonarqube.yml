@@ -64,7 +64,9 @@ jobs:
           -Dsonar.projectKey=library_service_key \
           -Dsonar.sources=. \
           -Dsonar.host.url=$SONAR_HOST_URL \
-          -Dsonar.token=$SONAR_TOKEN
+          -Dsonar.login=admin \
+          -Dsonar.password=Forez1234567@
+        
 
     - name: Fetch coverage via API
       run: |
