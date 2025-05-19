@@ -31,4 +31,3 @@ jobs:
 
       - name: Run Python tests
         run: pytest
-
