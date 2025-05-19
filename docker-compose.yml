@@ -1,0 +1,48 @@
+version: '3'
+
+services:
+  sonarqube:
+    image: sonarqube:lts
+    container_name: poly-micro-sonarqube
+    ports:
+      - "9090:9000"
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    networks:
+      - sonarqube-network
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    restart: unless-stopped
+
+  sonarscanner:
+    build:
+      context: .
+      dockerfile: sonar-scanner.Dockerfile
+    container_name: poly-micro-sonarscanner
+    depends_on:
+      - sonarqube
+    volumes:
+      - ..:/usr/src
+      - ../coverage:/usr/src/coverage
+    networks:
+      - sonarqube-network
+    environment:
+      - SONAR_HOST_URL=http://poly-micro-sonarqube:9000
+      # Default credentials - change in production
+      - SONAR_LOGIN=admin
+      - SONAR_PASSWORD=admin
+
+networks:
+  sonarqube-network:
+    driver: bridge
+
+volumes:
+  sonarqube_data:
+  sonarqube_logs:
+  sonarqube_extensions:

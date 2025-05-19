@@ -9,6 +9,17 @@ on:
 jobs:
   sonar-analysis:
     runs-on: ubuntu-latest
+    services:
+      sonarqube:
+        image: sonarqube:community
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd="curl -s http://localhost:9000/api/system/health | grep -q '\"status\":\"GREEN\"'"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     env:
       SONAR_HOST_URL: http://localhost:9000
       SONAR_PROJECT_KEY: library_service_key
@@ -18,36 +29,47 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    - name: Build custom SonarScanner image
+    - name: Wait for SonarQube to be ready
+      run: |
+        for i in {1..30}; do
+          STATUS=$(curl -s http://localhost:9000/api/system/status | jq -r '.status')
+          if [ "$STATUS" == "UP" ]; then
+            echo "SonarQube is ready!"
+            break
+          fi
+          echo "Waiting for SonarQube..."
+          sleep 5
+        done
+
+    - name: Build SonarScanner image
       run: |
         docker build -t custom-sonarscanner -f sonar-scanner.Dockerfile .
 
-    - name: Run SonarScanner in Docker
+    - name: Run SonarScanner
       run: |
         docker run --rm \
           --network=host \
           -e SONAR_HOST_URL=$SONAR_HOST_URL \
           -e SONAR_TOKEN=$SONAR_TOKEN \
-          -e SONAR_PROJECT_KEY=$SONAR_PROJECT_KEY \
           -v "$PWD:/usr/src" \
           custom-sonarscanner
 
-    - name: Fetch coverage via API
+    - name: Get code coverage
       run: |
         sleep 10
         curl -s "$SONAR_HOST_URL/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=coverage" \
           | jq -r '.component.measures[0].value' > coverage.txt
 
-    - name: Read and export coverage
+    - name: Export coverage to env
       id: coverage
       run: |
         COVERAGE=$(cat coverage.txt)
         echo "code_coverage=$COVERAGE" >> $GITHUB_ENV
         echo "Coverage is $COVERAGE%"
 
-    - name: Conditional pass/fail by coverage
+    - name: Check if coverage is sufficient
       if: ${{ env.code_coverage >= 30 }}
-      run: echo "✅ Coverage OK"
+      run: echo "✅ Coverage is acceptable"
 
     - name: Fail if coverage too low
       if: ${{ env.code_coverage < 30 }}
