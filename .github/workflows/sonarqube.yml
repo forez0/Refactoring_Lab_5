@@ -9,14 +9,40 @@ on:
 jobs:
   sonar-analysis:
     runs-on: ubuntu-latest
+    services:
+      sonarqube:
+        image: sonarqube:9.9-community
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd="curl -f http://localhost:9000/api/system/health || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+        env:
+          SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+
     env:
-      SONAR_HOST_URL: http://localhost:9000
+      SONAR_HOST_URL: http://sonarqube:9000
       SONAR_PROJECT_KEY: library_service_key
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Wait for SonarQube to be ready
+      run: |
+        echo "Waiting for SonarQube to be ready..."
+        for i in {1..30}; do
+          STATUS=$(curl -s http://localhost:9000/api/system/health | jq -r '.health')
+          if [ "$STATUS" == "GREEN" ]; then
+            echo "SonarQube is ready!"
+            break
+          fi
+          echo "Status: $STATUS, waiting..."
+          sleep 5
+        done
 
     - name: Build custom SonarScanner image
       run: |
