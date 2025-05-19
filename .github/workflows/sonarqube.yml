@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SONAR_HOST_URL: http://localhost:9000
-      SONAR_PROJECT_KEY: my-project
+      SONAR_PROJECT_KEY: library_service_key
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
     steps:
