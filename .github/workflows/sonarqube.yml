@@ -64,7 +64,7 @@ jobs:
           -Dsonar.projectKey=library_service_key \
           -Dsonar.sources=. \
           -Dsonar.host.url=$SONAR_HOST_URL \
-          -Dsonar.login=$SONAR_TOKEN
+          -Dsonar.token=$SONAR_TOKEN
 
     - name: Fetch coverage via API
       run: |
